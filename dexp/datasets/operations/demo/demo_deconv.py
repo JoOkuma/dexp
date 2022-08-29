@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 
 from arbol import aprint, asection
+from dask.distributed import Client
+from dask_cuda import LocalCUDACluster
 
 from dexp.datasets import ZDataset
 from dexp.datasets.operations.deconv import dataset_deconv
@@ -98,7 +100,7 @@ def _demo_deconv(length_xy=96, zoom=1, n=8, display=True):
                 psf_xy_size=31,
                 psf_z_size=31,
                 scaling=(1, 1, 1),
-                devices=[0],
+                client=Client(LocalCUDACluster([0])),
                 psf_show=False,
             )
 

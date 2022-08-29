@@ -1,13 +1,12 @@
 import functools
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 import dask
 import numpy as np
 import scipy
 from arbol.arbol import aprint, asection
 from dask.distributed import Client
-from dask_cuda import LocalCUDACluster
 from toolz import curry
 
 from dexp.datasets import BaseDataset
@@ -186,7 +185,7 @@ def dataset_deconv(
     psf_z_size: int,
     psf_show: bool,
     scaling: Tuple[float],
-    devices: List[int],
+    client: Client,
 ):
     aprint(f"Input images will be scaled by: (sz,sy,sx)={scaling}")
 
@@ -236,8 +235,6 @@ def dataset_deconv(
     dask.compute(*lazy_computation)
 
     # CUDA DASK cluster
-    cluster = LocalCUDACluster(CUDA_VISIBLE_DEVICES=devices)
-    client = Client(cluster)
     aprint("Dask Client", client)
 
     # Dataset info:

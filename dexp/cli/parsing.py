@@ -5,6 +5,9 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 
 import click
 from arbol import aprint
+from dask.distributed import Client, LocalCluster
+from dask_cuda import LocalCUDACluster
+from dask_jobqueue import SLURMCluster
 from numpy import s_
 from toolz import curry
 
@@ -58,13 +61,36 @@ def _parse_channels(input_dataset, channels):
     return channels
 
 
+def _parse_chunks(chunks: Optional[str]) -> Optional[Tuple[int]]:
+    if chunks is not None:
+        chunks = (int(c) for c in chunks.split(","))
+    return chunks
+
+
+def scheduler_callback(clx: click.Context, opt: click.Option, value: str) -> Client:
+    if "CPU" == value.upper():
+        cluster = LocalCluster()
+    elif "SLURM" == value.upper():
+        cluster = SLURMCluster(
+            queue="gpu",
+            job_cpu=20,
+            job_mem="32GB",
+            project="DEXP",
+            death_timepout="2m",
+            walltime="25m",
+            job_script_prologue=["--gpus-per-task=1"],
+        )
+    else:
+        cluster = LocalCUDACluster(CUDA_VISIBLE_DEVICES=parse_devices(value))
+
+    client = Client(cluster)
+    return client
+
+
 def parse_devices(devices: str) -> Union[str, Sequence[int]]:
     aprint(f"Requested devices    :  '{'--All--' if 'all' in devices else devices}' ")
 
-    if devices.endswith(".json"):
-        return devices
-
-    elif "all" in devices:
+    if "all" in devices:
         from dexp.utils.backends import CupyBackend
 
         devices = list(range(len(CupyBackend.available_devices())))
@@ -75,26 +101,21 @@ def parse_devices(devices: str) -> Union[str, Sequence[int]]:
     return devices
 
 
-def _parse_chunks(chunks: Optional[str]) -> Optional[Tuple[int]]:
-    if chunks is not None:
-        chunks = (int(c) for c in chunks.split(","))
-    return chunks
-
-
 def devices_callback(ctx: click.Context, opt: click.Option, value: str) -> Sequence[int]:
     return parse_devices(value)
 
 
-def multi_devices_option() -> Callable:
+def multi_devices_option(return_client: bool = False) -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
             "--devices",
             "-d",
+            "client" if return_client else "devices",
             type=str,
             default="all",
             help="Sets the CUDA devices id, e.g. 0,1,2 or ‘all’",
             show_default=True,
-            callback=devices_callback,
+            callback=scheduler_callback if return_client else devices_callback,
         )(f)
 
     return decorator

@@ -1,7 +1,8 @@
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import click
 from arbol.arbol import aprint, asection
+from dask.distributed import Client
 
 from dexp.cli.parsing import (
     channels_option,
@@ -21,7 +22,7 @@ from dexp.datasets.zarr_dataset import ZDataset
 @input_dataset_argument()
 @output_dataset_options()
 @channels_option()
-@multi_devices_option()
+@multi_devices_option(return_client=True)
 @slicing_option()
 @tilesize_option()
 @click.option(
@@ -125,7 +126,7 @@ def deconv(
     z_size: int,
     show_psf: bool,
     scaling: Tuple[float],
-    devices: List[int],
+    client: Client,
 ):
     """Deconvolves all or selected channels of a dataset."""
 
@@ -152,7 +153,7 @@ def deconv(
             psf_z_size=z_size,
             psf_show=show_psf,
             scaling=scaling,
-            devices=devices,
+            client=client,
         )
 
         input_dataset.close()
