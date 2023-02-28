@@ -23,6 +23,7 @@ def _estimate_crop(array: ArrayLike, quantile: float) -> Sequence[Tuple[int]]:
     with BestBackend():
         xp = Backend.get_xp_module()
         array = Backend.to_backend(array[::step, ::step, ::step], dtype=xp.float16)
+        array = xp.nan_to_num(array)
         array = xp.clip(array - xp.mean(array), 0, None)  # removing background noise
         kernel = xp.ones((window_size, window_size, window_size)) / (window_size**3)
         kernel = kernel.astype(xp.float16)
