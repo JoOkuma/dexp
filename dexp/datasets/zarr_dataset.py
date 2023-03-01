@@ -584,7 +584,14 @@ class ZDataset(BaseDataset):
         }
         return max(initialized)
 
-    def to_ome_zarr(self, path: str, force_dtype: Optional[int] = None, n_scales: int = 3) -> None:
+    def to_ome_zarr(
+        self,
+        path: str,
+        force_dtype: Optional[int] = None,
+        n_scales: int = 3,
+        chunk_size: int = 512,
+    ) -> None:
+
         ch = self.channels()[0]
         dexp_shape = self[ch].shape
 
@@ -617,7 +624,8 @@ class ZDataset(BaseDataset):
             factor = 2**i
             array_path = f"{i}"
             shape = ome_zarr_shape[:2] + tuple(int(m.ceil(s / factor)) for s in ome_zarr_shape[2:])
-            chunks = (1,) + self._default_chunks(shape, dtype)
+            chunks = (1, 1) + (chunk_size,) * (len(shape) - 2)
+            chunks = numpy.minimum(shape, chunks)
             ome_array = group.create_dataset(array_path, shape=shape, dtype=dtype, chunks=chunks)
             arrays.append(ome_array)
             datasets.append(
