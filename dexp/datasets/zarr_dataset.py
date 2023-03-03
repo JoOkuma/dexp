@@ -645,19 +645,6 @@ class ZDataset(BaseDataset):
                 }
             )
 
-        with BestBackend() as bkd:
-            for t in range(dexp_shape[0]):
-                aprint(f"Converting time point {t} ...", end="\r")
-                for c, arr in enumerate(dexp_arrays):
-                    stack = np.asarray(arr[t])
-                    arrays[0][t, c] = stack
-                    stack = bkd.to_backend(stack)
-                    for i in range(1, n_scales):
-                        downsample = (factor**i,) * stack.ndim
-                        arrays[i][t, c] = bkd.to_numpy(downscale_local_mean(stack, downsample))
-
-        aprint("Done conversion to OME zarr")
-
         group.attrs["multiscales"] = [
             {
                 "version": CurrentFormat().version,
@@ -677,6 +664,19 @@ class ZDataset(BaseDataset):
             }
         ]
         group.attrs["omero"] = default_omero_metadata(self._path, self.channels(), dtype)
+
+        with BestBackend() as bkd:
+            for t in range(dexp_shape[0]):
+                aprint(f"Converting time point {t} ...", end="\r")
+                for c, arr in enumerate(dexp_arrays):
+                    stack = np.asarray(arr[t])
+                    arrays[0][t, c] = stack
+                    stack = bkd.to_backend(stack)
+                    for i in range(1, n_scales):
+                        downsample = (factor**i,) * stack.ndim
+                        arrays[i][t, c] = bkd.to_numpy(downscale_local_mean(stack, downsample))
+
+        aprint("Done conversion to OME zarr")
 
     def __getitem__(self, channel: str) -> StackIterator:
         return StackIterator(self.get_array(channel, wrap_with_tensorstore=True), self._slicing)
