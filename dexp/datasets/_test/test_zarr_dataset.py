@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-import numpy
+import numpy as np
 import zarr
 from arbol import aprint
 from ome_zarr.utils import info
@@ -131,7 +131,7 @@ def test_add_channels_to(tmp_path: Path):
 
     a = zdataset1_reloaded.get_array("second-", wrap_with_dask=True).compute()
     b = zdataset2.get_array("second", wrap_with_dask=True).compute()
-    assert numpy.all(a == b)
+    assert np.all(a == b)
 
     zdataset1.close()
     zdataset2.close()
@@ -208,3 +208,24 @@ def test_sliced_ome_zarr_convertion(tmp_path: Path) -> None:
     zdataset.to_ome_zarr(ome_zarr_path)
 
     assert zarr.open(ome_zarr_path)["0"].shape == tuple(new_size)
+
+
+def test_isotropic_chunk_size(tmp_path: Path) -> None:
+    source_path = tmp_path / "test_isotropic_chunk.zarr"
+    zdataset = ZDataset(path=source_path, mode="w", store="dir")
+    zdataset.append_metadata({"dz": 4})
+
+    size = 256
+    n_dim = 3
+    chunk_shape = zdataset.isotropic_chunk_shape(size, n_dim=n_dim)
+
+    rounding_err = np.abs(np.power(np.product(chunk_shape), 1 / n_dim) - size)
+    assert rounding_err < 1
+
+    res = zdataset.get_resolution()[-n_dim:]
+    max_factor = max(res) / min(res)
+
+    rescaled_chunk_shape = res * np.asarray(chunk_shape)
+    for i in rescaled_chunk_shape:
+        for j in rescaled_chunk_shape:
+            assert np.abs(i - j) < max_factor

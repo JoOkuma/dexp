@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import dask
-import numpy
+import numpy as np
 import zarr
 from arbol.arbol import aprint, asection
 from ome_zarr.format import CurrentFormat
@@ -177,9 +177,9 @@ class ZDataset(BaseDataset):
         return self.get_array(channel).chunks
 
     @staticmethod
-    def _default_chunks(shape: Tuple[int], dtype: Union[str, numpy.dtype], max_size: int = 2147483647) -> Tuple[int]:
-        if not isinstance(dtype, numpy.dtype):
-            dtype = numpy.dtype(dtype)
+    def _default_chunks(shape: Tuple[int], dtype: Union[str, np.dtype], max_size: int = 2147483647) -> Tuple[int]:
+        if not isinstance(dtype, np.dtype):
+            dtype = np.dtype(dtype)
         width = shape[-1]
         height = shape[-2]
         depth = min(max_size // (dtype.itemsize * width * height), shape[-3])
@@ -335,7 +335,7 @@ class ZDataset(BaseDataset):
     def _projection_name(self, channel: str, axis: int):
         return f"{channel}_projection_{axis}"
 
-    def write_stack(self, channel: str, time_point: int, stack_array: numpy.ndarray):
+    def write_stack(self, channel: str, time_point: int, stack_array: np.ndarray):
         array_in_zarr = self.get_array(channel=channel, wrap_with_dask=False)
         array_in_zarr[time_point] = stack_array
 
@@ -345,7 +345,7 @@ class ZDataset(BaseDataset):
             projection_in_zarr = self.get_projection_array(channel=channel, axis=axis, wrap_with_dask=False)
             projection_in_zarr[time_point] = projection
 
-    def write_array(self, channel: str, array: numpy.ndarray):
+    def write_array(self, channel: str, array: np.ndarray):
         array_in_zarr = self.get_array(channel=channel, wrap_with_dask=False)
         array_in_zarr[...] = array
 
@@ -359,7 +359,7 @@ class ZDataset(BaseDataset):
         self,
         name: str,
         shape: Tuple[int, ...],
-        dtype: numpy.dtype,
+        dtype: np.dtype,
         chunks: Optional[Sequence[int]] = None,
         enable_projections: bool = True,
         codec: Optional[str] = None,
@@ -584,12 +584,20 @@ class ZDataset(BaseDataset):
         }
         return max(initialized)
 
+    def isotropic_chunk_shape(self, reference_chunk_size: int, n_dim: int = 3) -> Tuple[int]:
+        res = self.get_resolution()[-n_dim:]
+        reference_chunk_size = np.power(reference_chunk_size, len(res)) * np.product(res)
+        reference_chunk_size = np.power(reference_chunk_size, 1 / len(res))
+        reference_chunk = tuple(np.round(reference_chunk_size / res).astype(int))
+        return reference_chunk
+
     def to_ome_zarr(
         self,
         path: str,
         force_dtype: Optional[int] = None,
         n_scales: int = 3,
-        chunk_size: int = 512,
+        factor: int = 4,
+        reference_chunk_size: int = 256,
     ) -> None:
 
         ch = self.channels()[0]
@@ -616,22 +624,24 @@ class ZDataset(BaseDataset):
 
         ome_zarr_shape = (dexp_shape[0], len(dexp_arrays), *dexp_shape[1:])
 
-        group = zarr.group(zarr.NestedDirectoryStore(path))
+        reference_chunk = self.isotropic_chunk_shape(reference_chunk_size)
+        aprint("Using volume chunk size of ", reference_chunk)
 
+        group = zarr.group(zarr.NestedDirectoryStore(path))
         arrays = []
         datasets = []
         for i in range(n_scales):
-            factor = 2**i
+            downsample = factor**i
             array_path = f"{i}"
-            shape = ome_zarr_shape[:2] + tuple(int(m.ceil(s / factor)) for s in ome_zarr_shape[2:])
-            chunks = (1, 1) + (chunk_size,) * (len(shape) - 2)
-            chunks = numpy.minimum(shape, chunks)
+            shape = ome_zarr_shape[:2] + tuple(int(m.ceil(s / downsample)) for s in ome_zarr_shape[2:])
+            chunks = (1, 1) + reference_chunk
+            chunks = np.minimum(shape, chunks)
             ome_array = group.create_dataset(array_path, shape=shape, dtype=dtype, chunks=chunks)
             arrays.append(ome_array)
             datasets.append(
                 {
                     "path": array_path,
-                    "coordinateTransformations": create_coord_transform(self.get_resolution(), factor),
+                    "coordinateTransformations": create_coord_transform(self.get_resolution(), downsample),
                 }
             )
 
@@ -639,12 +649,12 @@ class ZDataset(BaseDataset):
             for t in range(dexp_shape[0]):
                 aprint(f"Converting time point {t} ...", end="\r")
                 for c, arr in enumerate(dexp_arrays):
-                    stack = numpy.asarray(arr[t])
+                    stack = np.asarray(arr[t])
                     arrays[0][t, c] = stack
                     stack = bkd.to_backend(stack)
                     for i in range(1, n_scales):
-                        factors = (2**i,) * stack.ndim
-                        arrays[i][t, c] = bkd.to_numpy(downscale_local_mean(stack, factors))
+                        downsample = (factor**i,) * stack.ndim
+                        arrays[i][t, c] = bkd.to_numpy(downscale_local_mean(stack, downsample))
 
         aprint("Done conversion to OME zarr")
 
