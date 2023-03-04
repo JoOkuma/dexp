@@ -595,8 +595,8 @@ class ZDataset(BaseDataset):
         self,
         path: str,
         force_dtype: Optional[int] = None,
-        n_scales: int = 3,
-        factor: int = 4,
+        n_scales: int = 5,
+        factor: int = 2,
         reference_chunk_size: int = 256,
     ) -> None:
 
@@ -625,7 +625,6 @@ class ZDataset(BaseDataset):
         ome_zarr_shape = (dexp_shape[0], len(dexp_arrays), *dexp_shape[1:])
 
         reference_chunk = self.isotropic_chunk_shape(reference_chunk_size)
-        aprint("Using volume chunk size of ", reference_chunk)
 
         group = zarr.group(zarr.NestedDirectoryStore(path))
         arrays = []
@@ -633,9 +632,25 @@ class ZDataset(BaseDataset):
         for i in range(n_scales):
             downsample = factor**i
             array_path = f"{i}"
-            shape = ome_zarr_shape[:2] + tuple(int(m.ceil(s / downsample)) for s in ome_zarr_shape[2:])
-            chunks = (1, 1) + reference_chunk
-            chunks = np.minimum(shape, chunks)
+            shape = tuple(int(m.ceil(s / downsample)) for s in ome_zarr_shape[2:])
+            chunks = tuple(np.minimum(shape, reference_chunk))
+
+            # chunk in time when chunks are really small
+            mean_chunk_size = np.power(np.product(reference_chunk), 1 / len(reference_chunk))
+            size_ratio = reference_chunk_size / mean_chunk_size
+
+            for threshold in (16, 8, 4):
+                if size_ratio >= threshold:
+                    chunks = (threshold // 2, 1) + chunks
+                    break
+
+            if len(chunks) < 5:
+                chunks = (1, 1) + chunks
+
+            shape = ome_zarr_shape[:2] + shape
+            chunks = tuple(np.minimum(chunks, shape))  # again because of time chunking
+            aprint(f"Chunk size of {chunks} for shape {shape} at scale {i}")
+
             ome_array = group.create_dataset(array_path, shape=shape, dtype=dtype, chunks=chunks)
             arrays.append(ome_array)
             datasets.append(
