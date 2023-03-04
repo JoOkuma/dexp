@@ -636,7 +636,7 @@ class ZDataset(BaseDataset):
             chunks = tuple(np.minimum(shape, reference_chunk))
 
             # chunk in time when chunks are really small
-            mean_chunk_size = np.power(np.product(reference_chunk), 1 / len(reference_chunk))
+            mean_chunk_size = np.power(np.product(chunks), 1 / len(chunks))
             size_ratio = reference_chunk_size / mean_chunk_size
 
             for threshold in (16, 8, 4):
